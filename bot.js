@@ -27,7 +27,6 @@ function getPersianDate() {
 }
 
 async function getTgjuExactRates() {
-  // استخراج مستقیم از فید زنده TGJU و بازارهای مرجع
   let data = null;
 
   try {
@@ -42,10 +41,9 @@ async function getTgjuExactRates() {
       data = res.data.data;
     }
   } catch (e) {
-    console.log('استفاده از آینه‌های فید زنده...');
+    console.log('استفاده از مقادیر پشتیبان بازار...');
   }
 
-  // دریافت نرخ زنده تتر
   let tetherToman = 268426;
   try {
     const wallex = await axios.get('https://api.wallex.ir/v1/currencies/stats', { timeout: 5000 });
@@ -54,7 +52,6 @@ async function getTgjuExactRates() {
     }
   } catch (e) {}
 
-  // تبدیل مقادیر ریال TGJU به تومان (تقسیم بر ۱۰)
   const parseTgju = (item, fallbackToman) => {
     if (item && item.p) {
       const cleanNum = Number(String(item.p).replace(/,/g, ''));
@@ -72,7 +69,6 @@ async function getTgjuExactRates() {
   const cny = data ? parseTgju(data.price_cny, 40100) : 40100;
   const afn = 4070;
 
-  // طلا و سکه دقیقاً مطابق سایت TGJU به تومان
   const gold18 = data ? parseTgju(data.geram18, 26397600) : 26397600;
   const gold24 = data ? parseTgju(data.geram24, 35196800) : 35196800;
   const coinEmami = data ? parseTgju(data.sekee, 271485000) : 271485000;
@@ -92,53 +88,60 @@ async function getTgjuExactRates() {
   };
 }
 
-function generateMarketBannerUrl(usdPrice, goldPrice) {
+// تولید بنر تایپوگرافی و داشبورد جذاب با فونت بولد و نمایشگر نوسان
+function generateMarketBannerUrl(p, timeStr) {
+  // ساخت نمودار ستونی لوکس با رنگ‌بندی طلایی و سبز نئونی
   const chartConfig = {
-    type: 'line',
+    type: 'bar',
     data: {
-      labels: ['۱۰:۰۰', '۱۱:۳۰', '۱۳:۰۰', '۱۴:۳۰', '۱۶:۰۰'],
-      datasets: [
-        {
-          label: 'طلا ۱۸ (گرم)',
-          data: [goldPrice * 0.985, goldPrice * 0.992, goldPrice * 0.997, goldPrice * 1.001, goldPrice],
-          borderColor: '#EAB308',
-          backgroundColor: 'rgba(234, 179, 8, 0.2)',
-          fill: true,
-          tension: 0.4
-        },
-        {
-          label: 'دلار آزاد',
-          data: [usdPrice * 0.988, usdPrice * 0.994, usdPrice * 0.999, usdPrice * 1.002, usdPrice],
-          borderColor: '#10B981',
-          backgroundColor: 'rgba(16, 185, 129, 0.1)',
-          fill: true,
-          tension: 0.4
-        }
-      ]
+      labels: ['دلار (هزار T)', 'تتر (هزار T)', 'طلا ۱۸ (میلیون T)', 'سکه امامی (۱۰میلیون T)'],
+      datasets: [{
+        data: [
+          Math.round(p.usd / 1000),
+          Math.round(p.tether / 1000),
+          parseFloat((p.gold18 / 1000000).toFixed(1)),
+          parseFloat((p.coinEmami / 10000000).toFixed(1))
+        ],
+        backgroundColor: [
+          'rgba(16, 185, 129, 0.85)',
+          'rgba(59, 130, 246, 0.85)',
+          'rgba(245, 158, 11, 0.9)',
+          'rgba(239, 68, 68, 0.85)'
+        ],
+        borderColor: ['#10b981', '#3b82f6', '#f59e0b', '#ef4444'],
+        borderWidth: 2,
+        borderRadius: 8
+      }]
     },
     options: {
+      legend: { display: false },
       title: {
         display: true,
-        text: 'تابلو زنده نوسانات طلا و ارز | شبکه اطلاع‌رسانی بازار',
+        text: `📊 تابلو زنده نبض بازار  |  ساعت ${timeStr}`,
         fontColor: '#ffffff',
-        fontSize: 18
-      },
-      legend: {
-        labels: { fontColor: '#e2e8f0', fontSize: 14 }
+        fontSize: 22,
+        fontStyle: 'bold',
+        padding: 20
       },
       scales: {
-        xAxes: [{ ticks: { fontColor: '#94a3b8' }, gridLines: { color: '#334155' } }],
-        yAxes: [{ ticks: { fontColor: '#94a3b8' }, gridLines: { color: '#334155' } }]
+        xAxes: [{
+          ticks: { fontColor: '#f8fafc', fontSize: 13, fontStyle: 'bold' },
+          gridLines: { display: false }
+        }],
+        yAxes: [{
+          ticks: { fontColor: '#94a3b8', fontSize: 11 },
+          gridLines: { color: 'rgba(255, 255, 255, 0.08)' }
+        }]
       }
     }
   };
 
-  return `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chartConfig))}&w=800&h=420&bkg=%230f172a`;
+  return `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chartConfig))}&w=900&h=480&bkg=%230b0f19`;
 }
 
 async function run() {
   try {
-    console.log('دریافت زنده قیمت‌های رسمی TGJU...');
+    console.log('دریافت نرخ‌های زنده...');
     const p = await getTgjuExactRates();
 
     const now = new Date();
@@ -175,7 +178,7 @@ async function run() {
 ⚡️ بروزرسانی خودکار و لحظه‌ای بازار
 🆔 @gheymat_bazar_live`;
 
-    const photoUrl = generateMarketBannerUrl(p.usd, p.gold18);
+    const photoUrl = generateMarketBannerUrl(p, timeStr);
     const balePhotoUrl = `https://tapi.bale.ai/bot${BALE_BOT_TOKEN}/sendPhoto`;
 
     await axios.post(balePhotoUrl, {
@@ -185,7 +188,7 @@ async function run() {
       parse_mode: 'Markdown'
     }, { timeout: 20000 });
 
-    console.log('✅ ارسال قیمت‌های دقیق TGJU با موفقیت انجام شد.');
+    console.log('✅ بنر تایپوگرافی با موفقیت ارسال شد.');
   } catch (error) {
     console.error('❌ خطا در ارسال:', error.response?.data || error.message);
     process.exit(1);
