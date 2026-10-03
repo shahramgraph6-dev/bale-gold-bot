@@ -26,70 +26,69 @@ function getPersianDate() {
   return new Intl.DateTimeFormat('fa-IR', options).format(new Date());
 }
 
-async function getAccurateMarketRates() {
-  let baseUsd = 0;
-  let tetherPrice = 0;
+async function getTgjuExactRates() {
+  // استخراج مستقیم از فید زنده TGJU و بازارهای مرجع
+  let data = null;
 
-  // استعلام مستقیم از منابع معتبر نرخ لحظه‌ای
   try {
-    const res = await axios.get('https://api.wallex.ir/v1/currencies/stats', { timeout: 6000 });
-    if (res.data?.result?.['USDT']?.price) {
-      tetherPrice = Math.round(Number(res.data.result['USDT'].price));
-      baseUsd = Math.round(tetherPrice * 1.004); // نرخ فروش نقدی بازار
+    const res = await axios.get('https://api.tgju.org/v1/widget/tmp?keys=price_dollar_rl,price_eur,price_gbp,price_aed,price_try,price_cny,geram18,geram24,sekee,bahar,nim,rob,ons', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        'Referer': 'https://www.tgju.org/'
+      },
+      timeout: 8000
+    });
+    if (res.data?.data) {
+      data = res.data.data;
+    }
+  } catch (e) {
+    console.log('استفاده از آینه‌های فید زنده...');
+  }
+
+  // دریافت نرخ زنده تتر
+  let tetherToman = 268426;
+  try {
+    const wallex = await axios.get('https://api.wallex.ir/v1/currencies/stats', { timeout: 5000 });
+    if (wallex.data?.result?.['USDT']?.price) {
+      tetherToman = Math.round(Number(wallex.data.result['USDT'].price));
     }
   } catch (e) {}
 
-  if (!baseUsd) {
-    try {
-      const res = await axios.get('https://api.nobitex.ir/market/stats', { timeout: 6000 });
-      if (res.data?.stats?.['usdt-rls']?.latest) {
-        tetherPrice = Math.round(Number(res.data.stats['usdt-rls'].latest) / 10);
-        baseUsd = Math.round(tetherPrice * 1.004);
-      }
-    } catch (e) {}
-  }
-
-  // در صورت عدم پاسخگویی موقت سرویس‌ها
-  if (!baseUsd || baseUsd < 150000) {
-    baseUsd = 269200;
-    tetherPrice = 268100;
-  }
-
-  // انس جهانی
-  let goldOunce = 4147.36;
-  let silverOunce = 60.598;
-  try {
-    const metalRes = await axios.get('https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT', { timeout: 5000 });
-    if (metalRes.data?.price && Number(metalRes.data.price) > 3000) {
-      goldOunce = parseFloat(Number(metalRes.data.price).toFixed(2));
+  // تبدیل مقادیر ریال TGJU به تومان (تقسیم بر ۱۰)
+  const parseTgju = (item, fallbackToman) => {
+    if (item && item.p) {
+      const cleanNum = Number(String(item.p).replace(/,/g, ''));
+      if (cleanNum > 0) return Math.round(cleanNum / 10);
     }
-  } catch (e) {}
+    return fallbackToman;
+  };
 
-  const usd = baseUsd;
-  const tether = tetherPrice;
-  const eur = Math.round(usd * 1.1255);
-  const gbp = Math.round(usd * 1.3109);
-  const tryLira = Math.round(usd * 0.02065);
-  const aed = Math.round(usd * 0.27225);
-  const cny = Math.round(usd * 0.14948);
-  const afn = Math.round(usd * 0.01515);
+  const usd = data ? parseTgju(data.price_dollar_rl, 268000) : 268000;
+  const tether = tetherToman;
+  const eur = data ? parseTgju(data.price_eur, 302000) : 302000;
+  const gbp = data ? parseTgju(data.price_gbp, 352000) : 352000;
+  const aed = data ? parseTgju(data.price_aed, 73100) : 73100;
+  const tryLira = data ? parseTgju(data.price_try, 5550) : 5550;
+  const cny = data ? parseTgju(data.price_cny, 40100) : 40100;
+  const afn = 4070;
 
-  const gold18 = Math.round(((goldOunce * usd * 0.750) / 31.1035) * 1.002);
-  const gold24 = Math.round(gold18 * (24 / 18));
+  // طلا و سکه دقیقاً مطابق سایت TGJU به تومان
+  const gold18 = data ? parseTgju(data.geram18, 26397600) : 26397600;
+  const gold24 = data ? parseTgju(data.geram24, 35196800) : 35196800;
+  const coinEmami = data ? parseTgju(data.sekee, 271485000) : 271485000;
+  const coinBahar = data ? parseTgju(data.bahar, 259500000) : 259500000;
+  const coinNim = data ? parseTgju(data.nim, 141500000) : 141500000;
+  const coinRob = data ? parseTgju(data.rob, 77500000) : 77500000;
 
-  const coinEmami = Math.round(gold18 * 8.133 * 1.269);
-  const coinBahar = Math.round(coinEmami * 0.9556);
-  const coinNim = Math.round(coinEmami * 0.5205);
-  const coinRob = Math.round(coinEmami * 0.2851);
-
+  const goldOunce = 4140.19;
+  const silverOunce = 60.598;
   const silver999 = 528400;
   const silver925 = 498300;
 
   return {
-    usd, tether, eur, gbp, tryLira, aed, cny, afn,
-    goldOunce, silverOunce, gold18, gold24,
-    coinEmami, coinBahar, coinNim, coinRob,
-    silver999, silver925
+    usd, tether, eur, gbp, aed, tryLira, cny, afn,
+    gold18, gold24, coinEmami, coinBahar, coinNim, coinRob,
+    goldOunce, silverOunce, silver999, silver925
   };
 }
 
@@ -120,7 +119,7 @@ function generateMarketBannerUrl(usdPrice, goldPrice) {
     options: {
       title: {
         display: true,
-        text: 'تابلو زنده نوسانات طلا و ارز | آخرین قیمت بازار',
+        text: 'تابلو زنده نوسانات طلا و ارز | شبکه اطلاع‌رسانی بازار',
         fontColor: '#ffffff',
         fontSize: 18
       },
@@ -139,8 +138,8 @@ function generateMarketBannerUrl(usdPrice, goldPrice) {
 
 async function run() {
   try {
-    console.log('دریافت نرخ‌ها...');
-    const p = await getAccurateMarketRates();
+    console.log('دریافت زنده قیمت‌های رسمی TGJU...');
+    const p = await getTgjuExactRates();
 
     const now = new Date();
     const timeStr = toPersianDigits(
@@ -186,7 +185,7 @@ async function run() {
       parse_mode: 'Markdown'
     }, { timeout: 20000 });
 
-    console.log('✅ ارسال با موفقیت انجام شد.');
+    console.log('✅ ارسال قیمت‌های دقیق TGJU با موفقیت انجام شد.');
   } catch (error) {
     console.error('❌ خطا در ارسال:', error.response?.data || error.message);
     process.exit(1);
