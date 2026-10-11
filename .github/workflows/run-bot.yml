@@ -2,8 +2,7 @@ name: Send Gold Prices to Bale
 
 on:
   schedule:
-    # گیت‌هاب هر یک ساعت این فرآیند را زنده نگه می‌دارد
-    - cron: '0 * * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 jobs:
@@ -16,20 +15,13 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
 
       - name: Install dependencies
         run: npm install
 
-      - name: Execute script in continuous loop
+      - name: Execute script
         env:
           BALE_BOT_TOKEN: ${{ secrets.BALE_BOT_TOKEN }}
           BALE_CHAT_ID: ${{ secrets.BALE_CHAT_ID }}
-        run: |
-          # اجرای حلقه به مدت ۵۰ دقیقه و ارسال پیام در فواصل بسیار کوتاه (هر ۶۰ ثانیه)
-          for i in {1..50}
-          do
-            echo "ارسال نوبت $i..."
-            node bot.js
-            sleep 60
-          done
+        run: node bot.js
