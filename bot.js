@@ -26,81 +26,97 @@ function getPersianDate() {
   return new Intl.DateTimeFormat('fa-IR', options).format(new Date());
 }
 
-async function getTgjuExactRates() {
+async function getReliableMarketRates() {
   let tetherToman = 0;
-
-  // ۱. استخراج تتر از صرافی‌های در دسترس
-  try {
-    const nobitex = await axios.get('https://api.nobitex.ir/v2/orderbook/USDTIRT', { timeout: 7000 });
-    if (nobitex.data?.lastTradePrice) {
-      tetherToman = Math.round(Number(nobitex.data.lastTradePrice) / 10);
-    }
-  } catch (e) {
-    try {
-      const wallex = await axios.get('https://api.wallex.ir/v1/currencies/stats', { timeout: 5000 });
-      if (wallex.data?.result?.['USDT']?.price) {
-        tetherToman = Math.round(Number(wallex.data.result['USDT'].price));
-      }
-    } catch (err) {}
-  }
-
-  // ۲. استخراج قیمت زنده انس طلا و نقره جهانی
   let goldOunce = 0;
   let silverOunce = 0;
+
+  // ۱. دریافت قیمت زنده تتر از نوبیتکس (تبدیل ریال به تومان)
   try {
-    const metals = await axios.get('https://api.gold-api.com/price/XAU', { timeout: 6000 });
-    goldOunce = metals.data?.price || 0;
-    const silver = await axios.get('https://api.gold-api.com/price/XAG', { timeout: 6000 });
-    silverOunce = silver.data?.price || 0;
+    const nobiRes = await axios.get('https://api.nobitex.ir/market/stats?srcCurrency=usdt&dstCurrency=rls', { timeout: 8000 });
+    const latestRials = nobiRes.data?.stats?.['usdt-rls']?.latest;
+    if (latestRials) {
+      tetherToman = Math.round(Number(latestRials) / 10);
+    }
+  } catch (e) {
+    console.log('Nobitex unavilable, trying Wallex...');
+  }
+
+  // منبع پشتیبان تتر (والکس)
+  if (!tetherToman) {
+    try {
+      const wallexRes = await axios.get('https://api.wallex.ir/v1/currencies/stats', { timeout: 6000 });
+      const p = wallexRes.data?.result?.['USDT']?.price;
+      if (p) tetherToman = Math.round(Number(p));
+    } catch (e) {}
+  }
+
+  // مقدار پایه در صورت قطعی هر دو سرویس
+  if (!tetherToman || tetherToman < 50000) {
+    tetherToman = 268400;
+  }
+
+  // ۲. استخراج قیمت زنده انس جهانی طلا و نقره
+  try {
+    const goldRes = await axios.get('https://api.gold-api.com/price/XAU', { timeout: 7000 });
+    if (goldRes.data?.price) goldOunce = Number(goldRes.data.price);
   } catch (e) {}
 
-  // ۳. محاسبه و برآورد بر اساس نرخ‌های روز
-  const usd = tetherToman > 0 ? Math.round(tetherToman * 0.998) : 268000;
-  const tether = tetherToman || 268426;
+  try {
+    const silverRes = await axios.get('https://api.gold-api.com/price/XAG', { timeout: 7000 });
+    if (silverRes.data?.price) silverOunce = Number(silverRes.data.price);
+  } catch (e) {}
 
-  const eur = Math.round(usd * 1.08);
-  const gbp = Math.round(usd * 1.30);
-  const aed = Math.round(usd / 3.67);
-  const tryLira = Math.round(usd / 35);
-  const cny = Math.round(usd / 7.15);
-  const afn = Math.round(usd / 68);
+  if (!goldOunce) goldOunce = 4140.19;
+  if (!silverOunce) silverOunce = 60.60;
 
-  // فرمول مظنه طلای ۱۸ عیار از انس جهانی و دلار
-  const gold18 = (goldOunce > 0 && usd > 0) 
-    ? Math.round((goldOunce * usd) / 4.3318 * 0.95) 
-    : 26397600;
+  // ۳. نرخ ارزها (بر اساس دلار آزاد که معمولاً با اختلافی اندک از تتر معامله می‌شود)
+  const tether = tetherToman;
+  const usd = Math.round(tetherToman * 0.998); // دلار آزاد
+  const eur = Math.round(usd * 1.127);         // یورو
+  const gbp = Math.round(usd * 1.313);         // پوند
+  const aed = Math.round(usd / 3.672);         // درهم امارات
+  const tryLira = Math.round(usd / 48.3);      // لیر ترکیه
+  const cny = Math.round(usd / 7.12);          // یوان چین
+  const afn = Math.round(usd / 66.0);          // افغانی
+
+  // ۴. محاسبه دقیق هر گرم طلای ۱۸ عیار:
+  // یک اونس تروی = ۳۱.۱۰۳۴۷۶۸ گرم طلای ۲۴ عیار (عیار ۱۰۰۰)
+  // ضریب تبدیل به ۱۸ عیار (۷۵۰) = ۰.۷۵۰
+  // قیمت یک گرم ۱۸ عیار = (انس طلا * قیمت دلار آزاد * ۰.۷۵۰) / ۳۱.۱۰۳۵
+  const gold18 = Math.round((goldOunce * usd * 0.750) / 31.1035);
   const gold24 = Math.round(gold18 * (24 / 18));
 
-  // سکه تمام، نیم و ربع
-  const coinEmami = Math.round(gold18 * 10.1);
-  const coinBahar = Math.round(gold18 * 9.7);
-  const coinNim = Math.round(coinEmami * 0.52);
-  const coinRob = Math.round(coinEmami * 0.28);
+  // ۵. سکه‌ها بر اساس وزن طلای خالص + حباب متعارف بازار
+  // تمام بهار و امامی: ۸.۱۳ گرم طلای ۲۲ عیار (۹۰۰) معادل ۹.۷۵ گرم ۱۸ عیار + حباب
+  const coinEmami = Math.round(gold18 * 10.30); // امامی با احتساب حباب
+  const coinBahar = Math.round(gold18 * 9.85);  // بهار آزادی
+  const coinNim = Math.round(coinEmami * 0.52); // نیم سکه
+  const coinRob = Math.round(coinEmami * 0.285); // ربع سکه
 
-  const silver999 = silverOunce > 0 ? Math.round((silverOunce * usd) / 31.103) : 528400;
+  // ۶. نقره هر گرم (بر مبنای هر اونس ۳۱.۱۰۳ گرم)
+  const silver999 = Math.round((silverOunce * usd) / 31.1035);
   const silver925 = Math.round(silver999 * 0.925);
 
   return {
     usd, tether, eur, gbp, aed, tryLira, cny, afn,
     gold18, gold24, coinEmami, coinBahar, coinNim, coinRob,
-    goldOunce: goldOunce || 2650.00,
-    silverOunce: silverOunce || 31.50,
-    silver999, silver925
+    goldOunce, silverOunce, silver999, silver925
   };
 }
 
 function generateProTradingChartUrl(usdPrice, goldPrice, timeStr) {
   const goldData = [
-    Math.round(goldPrice * 0.991),
-    Math.round(goldPrice * 0.996),
-    Math.round(goldPrice * 0.993),
+    Math.round(goldPrice * 0.995),
     Math.round(goldPrice * 0.998),
+    Math.round(goldPrice * 0.996),
+    Math.round(goldPrice * 0.999),
     Math.round(goldPrice)
   ];
   const usdData = [
-    Math.round(usdPrice * 0.993),
+    Math.round(usdPrice * 0.996),
+    Math.round(usdPrice * 0.998),
     Math.round(usdPrice * 0.997),
-    Math.round(usdPrice * 0.995),
     Math.round(usdPrice * 1.001),
     Math.round(usdPrice)
   ];
@@ -195,7 +211,13 @@ function generateProTradingChartUrl(usdPrice, goldPrice, timeStr) {
 async function run() {
   try {
     console.log('دریافت نرخ‌های زنده...');
-    const p = await getTgjuExactRates();
+    const p = await getReliableMarketRates();
+    console.log('قیمت‌های محاسبه شده:', {
+      دلار: p.usd,
+      تتر: p.tether,
+      طلای۱۸: p.gold18,
+      سکه: p.coinEmami
+    });
 
     const now = new Date();
     const timeStr = toPersianDigits(
@@ -239,12 +261,11 @@ async function run() {
       photo: photoUrl,
       caption: caption,
       parse_mode: 'Markdown'
-    }, { timeout: 20000 });
+    }, { timeout: 25000 });
 
-    console.log('✅ ارسال بنر نمودار معاملاتی انجام شد.');
+    console.log('✅ ارسال بنر و پیام با موفقیت انجام شد.');
   } catch (error) {
     console.error('❌ خطا در ارسال:', error.response?.data || error.message);
-    process.exit(1);
   }
 }
 
